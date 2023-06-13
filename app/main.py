@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, Response, status
-from pydantic import BaseModel
+from . import schemas
 from sqlalchemy.orm import Session
 
 from . import models
@@ -9,13 +9,13 @@ models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
 
-@app.get("/posts", status_code=status.HTTP_200_OK)
+@app.get("/posts", status_code=status.HTTP_200_OK, response_model=list[schemas.Post])
 def get_posts(db: Session = Depends(get_db)):
     posts = db.query(models.Post).all()
     return posts
 
 
-@app.get("/posts/{id}", status_code=status.HTTP_200_OK)
+@app.get("/posts/{id}", status_code=status.HTTP_200_OK, response_model=schemas.Post)
 def get_post(id: int, db: Session = Depends(get_db)):
     post = db.query(models.Post).filter(models.Post.id == id).first()
     if post:
@@ -25,14 +25,8 @@ def get_post(id: int, db: Session = Depends(get_db)):
     )
 
 
-class Post(BaseModel):
-    title: str
-    content: str
-    published: bool = False
-
-
 @app.post("/posts", status_code=status.HTTP_201_CREATED)
-def create_post(post: Post, db: Session = Depends(get_db)):
+def create_post(post: schemas.PostCreate, db: Session = Depends(get_db)):
     new_post = models.Post(**post.dict())
     db.add(new_post)
     db.commit()
@@ -53,7 +47,7 @@ def delete_post(id: int, db: Session = Depends(get_db)):
 
 
 @app.put("/posts/{id}", status_code=status.HTTP_202_ACCEPTED)
-def update_post(id: int, post: Post, db: Session = Depends(get_db)):
+def update_post(id: int, post: schemas.PostBase, db: Session = Depends(get_db)):
     post_query = db.query(models.Post).filter(models.Post.id == id)
     update_post = post_query.first()
     if not update_post:
@@ -62,9 +56,45 @@ def update_post(id: int, post: Post, db: Session = Depends(get_db)):
         )
     post_query.update(post.dict(), synchronize_session=False)
     db.commit()
-    return {"Updated", post_query.first()}
+    return post_query.first()
 
 
+@app.post("/users", status_code=status.HTTP_201_CREATED)
+def create_user(user: schemas.UserBase, db: Session = Depends(get_db)):
+    new_user = models.User(**user.dict())
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+
+@app.get("/users/{id}",response_model=schemas.User)
+def get_user(id:int,db:Session=Depends(get_db)):
+    user=db.query(models.User).filter(models.User.id==id).first()
+    if user:
+        return user
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"user with id:{id} not found")
+@app.get("/users",response_model=list[schemas.User])
+def get_users(db:Session=Depends(get_db)):
+    users=db.query(models.User).all()
+    return users
+
+@app.delete("/users/{id}",status_code=status.HTTP_204_NO_CONTENT)
+def delete_users(id:int ,db:Session=Depends(get_db)):
+    user=db.query(models.User).filter(models.User.id==id)
+    if not user.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"user with id:{id} not found")
+    user.delete(synchronize_session=False)
+    db.commit()
+    Response("user deleted successfully")
+@app.put("/users/{id}",status_code=status.HTTP_202_ACCEPTED,response_model=schemas.User)
+def update_user(id:int,user:schemas.UserBase,db:Session=Depends(get_db)):
+    update_query=db.query(models.User).filter(models.User.id==id)
+    if not update_query.first():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail=f"user with id:{id} not found")
+    update_query.update(user.dict(),synchronize_session=False)
+    db.commit()
+    return update_query.first()
 # while True:
 #     try:
 #         connection = psycopg2.connect(
